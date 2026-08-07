@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+import GitBackup
 from LeagueScore import (
     ALGORITHM_NAME, ALGORITHM_VERSION, MAX_COMPETITION_PLAYERS,
     MIN_COMPETITION_PLAYERS, is_eligible_player_count, is_koleskabsgame,
@@ -25,8 +26,17 @@ from LeagueScore import (
 from Scoring import generate_round_sequence, valid_scores_for_round
 
 DEFAULT_PLAYERS = ["Anders", "Ankersø", "AV"]
-DEFAULT_PATH = Path(__file__).with_name("competition_data.json")
-AVATAR_DIR = Path(__file__).with_name("avatars")
+_DATA_DIR = Path(os.environ["PIRATE_WHIST_DATA_DIR"]) if os.environ.get("PIRATE_WHIST_DATA_DIR") else Path(__file__).parent
+DEFAULT_PATH = _DATA_DIR / "competition_data.json"
+AVATAR_DIR = _DATA_DIR / "avatars"
+
+if GitBackup.enabled():
+    # Runs once per fresh container: hydrate the (otherwise empty) local
+    # disk from the GitHub-backed copy before any code reads DEFAULT_PATH.
+    if not DEFAULT_PATH.exists():
+        GitBackup.pull_file(DEFAULT_PATH, GitBackup.DATA_REPO_PATH)
+    if not AVATAR_DIR.exists():
+        GitBackup.pull_directory(AVATAR_DIR, GitBackup.AVATAR_REPO_DIR)
 SCHEMA_VERSION = 6
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 MAX_AVATAR_PIXELS = 16_000_000
@@ -449,6 +459,8 @@ def _save_unlocked(data: Dict, path: Path, create_backup: bool = True) -> None:
         _replace_with_retry(temporary, path)
         fingerprint = _fingerprint(path)
         _CACHE[str(path.resolve())] = (*fingerprint, deepcopy(data))
+        if GitBackup.enabled() and path.resolve() == DEFAULT_PATH.resolve():
+            GitBackup.push_file(path, GitBackup.DATA_REPO_PATH, "Opdater liga-data")
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -673,6 +685,10 @@ def save_avatar(player_id: str, content: bytes, mime_type: str, path: Path = DEF
             os.replace(temporary, final_path)
             player["avatar"] = str(Path("avatars") / filename)
             _save_unlocked(data, path)
+            if GitBackup.enabled():
+                GitBackup.push_file(
+                    final_path, f"{GitBackup.AVATAR_REPO_DIR}/{filename}", f"Tilføj avatar {filename}",
+                )
         except Exception:
             if final_path.exists():
                 final_path.unlink()
@@ -703,6 +719,10 @@ def remove_avatar(player_id: str, path: Path = DEFAULT_PATH) -> None:
                 avatar_path.unlink()
             except OSError:
                 pass
+            if GitBackup.enabled():
+                GitBackup.delete_file(
+                    f"{GitBackup.AVATAR_REPO_DIR}/{avatar_path.name}", f"Fjern avatar {avatar_path.name}",
+                )
 
 
 def _apply_league_score(game: Dict, totals: Dict[str, float], counts: Dict[str, int]) -> None:
