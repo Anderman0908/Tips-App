@@ -38,7 +38,7 @@ if GitBackup.enabled():
     if not AVATAR_DIR.exists():
         GitBackup.pull_directory(AVATAR_DIR, GitBackup.AVATAR_REPO_DIR)
 SCHEMA_VERSION = 6
-MAX_AVATAR_BYTES = 2 * 1024 * 1024
+MAX_AVATAR_BYTES = 15 * 1024 * 1024
 MAX_AVATAR_PIXELS = 16_000_000
 AVATAR_SIZE = 512
 MAX_NAME_LENGTH = 80
